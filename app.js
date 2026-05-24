@@ -2,6 +2,9 @@ const app = document.getElementById("app");
 
 let history = [];
 let message = "";
+let mode = "menu";
+let players = [];
+let turn = 0;
 
 const words = [
   "りんご","ごりら","らっぱ","ぱんだ","だるま","まくら",
@@ -13,7 +16,11 @@ const words = [
   "たぬき","きつね","ねずみ","みそ","そら","らじお"
 ];
 
+const marks = ["○","△","□","▽","◇","☆","◎","＋","×","◐"];
+
 function menu(){
+  mode = "menu";
+
   app.innerHTML =
     '<div class="title">' +
       '<div class="copy">最後に「ん」をつけた人が負け。</div>' +
@@ -21,13 +28,76 @@ function menu(){
     '</div>' +
 
     '<button class="button" onclick="startCpu()">PCと対戦</button>' +
-    '<button class="button">みんなで対戦</button>';
+    '<button class="button" onclick="setupMulti()">みんなで対戦</button>';
 }
 
 function startCpu(){
+  mode = "cpu";
   history = ["りんご"];
   message = "「ご」から始まる言葉を入力";
   drawCpu();
+}
+
+function setupMulti(){
+  mode = "setup";
+  players = [
+    { name:"参加者1", mark:"○", alive:true },
+    { name:"参加者2", mark:"△", alive:true },
+    { name:"参加者3", mark:"□", alive:true }
+  ];
+
+  drawSetup();
+}
+
+function drawSetup(){
+  app.innerHTML =
+    '<button class="button" onclick="menu()">戻る</button>' +
+
+    '<div class="title">' +
+      '<div class="copy">最大10人まで登録</div>' +
+      '<div class="logo">対戦設定</div>' +
+    '</div>' +
+
+    '<div class="history">' +
+      players.map(function(p,i){
+        return '<div class="row">' +
+          p.mark + '　' +
+          '<input value="' + p.name + '" onchange="changeName(' + i + ', this.value)" style="width:70%;height:32px;">' +
+        '</div>';
+      }).join("") +
+    '</div>' +
+
+    '<button class="button" onclick="addPlayer()">参加者を追加</button>' +
+    '<button class="button" onclick="startMulti()">開始</button>';
+}
+
+function addPlayer(){
+  if(players.length >= 10){
+    alert("参加者は10人までです。");
+    return;
+  }
+
+  const i = players.length;
+
+  players.push({
+    name:"参加者" + (i + 1),
+    mark:marks[i],
+    alive:true
+  });
+
+  drawSetup();
+}
+
+function changeName(index, value){
+  players[index].name = value || ("参加者" + (index + 1));
+}
+
+function startMulti(){
+  mode = "multi";
+  history = ["りんご"];
+  turn = 0;
+  message = players[turn].name + " の番です。";
+  drawMulti();
 }
 
 function drawCpu(){
@@ -35,18 +105,15 @@ function drawCpu(){
 
   app.innerHTML =
     '<button class="button" onclick="menu()">戻る</button>' +
-
     '<div class="word">' + current + '</div>' +
-
     '<p style="text-align:center;">次は「' + lastChar(current) + '」</p>' +
 
     '<div class="inputArea">' +
       '<input id="wordInput" class="input" placeholder="ことばを入力">' +
-      '<button class="send" onclick="submitWord()">決定</button>' +
+      '<button class="send" onclick="submitCpuWord()">決定</button>' +
     '</div>' +
 
     '<p id="debug" style="font-size:12px;color:#555;">入力待ち</p>' +
-
     '<p style="min-height:24px;">' + message + '</p>' +
 
     '<div class="history">' +
@@ -55,125 +122,22 @@ function drawCpu(){
       }).join("") +
     '</div>';
 
-  const input = document.getElementById("wordInput");
-
-  input.addEventListener("input", function(){
-    document.getElementById("debug").textContent = "入力中：" + input.value;
-  });
-
-  input.addEventListener("keydown", function(e){
-    if(e.key === "Enter"){
-      submitWord();
-    }
-  });
-
-  input.focus();
+  bindInput();
 }
 
-function submitWord(){
-  const input = document.getElementById("wordInput");
-  let word = input.value;
-
-  word = normalize(word);
-
+function drawMulti(){
   const current = history[history.length - 1];
+  const p = players[turn];
 
-  if(word === ""){
-    message = "言葉を入力してね。";
-    drawCpu();
-    return;
-  }
+  app.innerHTML =
+    '<button class="button" onclick="menu()">戻る</button>' +
 
-  if(firstChar(word) !== lastChar(current)){
-    message = "入力：" + word + " ／ 「" + lastChar(current) + "」から始めてね。";
-    drawCpu();
-    return;
-  }
+    '<div class="word">' + current + '</div>' +
+    '<p style="text-align:center;">次は「' + lastChar(current) + '」</p>' +
 
-  if(history.indexOf(word) !== -1){
-    message = "入力：" + word + " ／ 同じ言葉は使えません。";
-    drawCpu();
-    return;
-  }
+    '<div style="text-align:center;font-size:20px;margin-top:20px;">' +
+      p.mark + '　' + p.name + ' の番' +
+    '</div>' +
 
-  if(words.indexOf(word) === -1){
-    message = "入力：" + word + " ／ 辞書にない言葉です。唱え直し。";
-    drawCpu();
-    return;
-  }
-
-  history.push(word);
-
-  if(lastChar(word) === "ん"){
-    message = "あなたの負け。";
-    drawCpu();
-    return;
-  }
-
-  const aiWord = pickAiWord();
-
-  history.push(aiWord);
-
-  if(lastChar(aiWord) === "ん"){
-    message = "AIの負け。";
-    drawCpu();
-    return;
-  }
-
-  message = "AI：" + aiWord;
-  drawCpu();
-}
-
-function pickAiWord(){
-  const current = history[history.length - 1];
-  const need = lastChar(current);
-
-  const candidates = words.filter(function(w){
-    return firstChar(w) === need &&
-           history.indexOf(w) === -1 &&
-           lastChar(w) !== "ん";
-  });
-
-  if(candidates.length === 0){
-    return need + "ん";
-  }
-
-  return candidates[0];
-}
-
-function normalize(text){
-  return text
-    .trim()
-    .replace(/\s/g,"")
-    .replace(/[ァ-ン]/g,function(s){
-      return String.fromCharCode(s.charCodeAt(0) - 0x60);
-    });
-}
-
-function firstChar(word){
-  return word.charAt(0);
-}
-
-function lastChar(word){
-  let c = word.charAt(word.length - 1);
-
-  if(c === "ー" && word.length >= 2){
-    c = word.charAt(word.length - 2);
-  }
-
-  const small = {
-    "ゃ":"や",
-    "ゅ":"ゆ",
-    "ょ":"よ",
-    "ぁ":"あ",
-    "ぃ":"い",
-    "ぅ":"う",
-    "ぇ":"え",
-    "ぉ":"お",
-    "っ":"つ"
-  };
-
-  return small[c] || c;
-}
-
-menu();
+    '<div class="inputArea">' +
+      '<input id="wordInput"
